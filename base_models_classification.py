@@ -1,4 +1,6 @@
+
 import numpy as np
+import time
 from sklearn.model_selection import train_test_split, KFold
 from sklearn.preprocessing import LabelEncoder
 import torch
@@ -7,17 +9,24 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
 from torchvision import models
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, balanced_accuracy_score, roc_auc_score
 
-np.random.seed(42)
-torch.manual_seed(42)
+# Set seeds
+seed = 42
+np.random.seed(seed)
+torch.manual_seed(seed)
 if torch.cuda.is_available():
-    torch.cuda.manual_seed_all(42)
+    torch.cuda.manual_seed_all(seed)
 
-benign_images = np.load('/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/pannuke_two_classes/images/benign_images.npy')
-benign_labels = np.load('/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/pannuke_two_classes/labels/benign_labels.npy')
-malignant_images = np.load('/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/pannuke_two_classes/images/malignant_images.npy')
-malignant_labels = np.load('/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/pannuke_two_classes/labels/malignant_labels.npy')
+# Load data (unchanged)
+benign_images = np.load(
+    '/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/pannuke_two_classes/images/benign_images.npy')
+benign_labels = np.load(
+    '/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/pannuke_two_classes/labels/benign_labels.npy')
+malignant_images = np.load(
+    '/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/pannuke_two_classes/images/malignant_images.npy')
+malignant_labels = np.load(
+    '/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/pannuke_two_classes/labels/malignant_labels.npy')
 
 all_images = np.concatenate([benign_images, malignant_images], axis=0)
 all_labels = np.concatenate([benign_labels, malignant_labels], axis=0)
@@ -27,10 +36,11 @@ all_labels_encoded = label_encoder.fit_transform(all_labels)
 num_classes = len(np.unique(all_labels_encoded))
 
 train_val_images, test_images, train_val_labels, test_labels = train_test_split(
-    all_images, all_labels_encoded, test_size=0.2, random_state=42, stratify=all_labels_encoded
+    all_images, all_labels_encoded, test_size=0.2, random_state=seed, stratify=all_labels_encoded
 )
 
 
+# Dataset and transforms (unchanged)
 class MedicalDataset(Dataset):
     def __init__(self, images, labels, transform=None):
         self.images = images
@@ -59,7 +69,6 @@ def get_transforms():
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
-
     val_transform = transforms.Compose([
         transforms.ToPILImage(),
         transforms.Resize((224, 224)),
@@ -69,6 +78,7 @@ def get_transforms():
     return train_transform, val_transform
 
 
+# Model initialization (unchanged)
 def initialize_model(model_name, num_classes):
     model = None
     if model_name == 'vgg19':
@@ -90,6 +100,7 @@ def initialize_model(model_name, num_classes):
     return model
 
 
+# Training function with time tracking
 def train_model(model, train_loader, val_loader, num_epochs=30, lr=1e-4):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
@@ -99,9 +110,9 @@ def train_model(model, train_loader, val_loader, num_epochs=30, lr=1e-4):
 
     best_model_state = None
     best_f1 = 0.0
+    train_start_time = time.time()
 
     for epoch in range(num_epochs):
-        # Training phase
         model.train()
         train_loss = 0.0
         train_preds, train_labels_list = [], []
@@ -123,7 +134,6 @@ def train_model(model, train_loader, val_loader, num_epochs=30, lr=1e-4):
         train_acc = accuracy_score(train_labels_list, train_preds)
         train_f1 = f1_score(train_labels_list, train_preds, average='macro')
 
-        # Validation phase
         model.eval()
         val_loss = 0.0
         val_preds, val_labels = [], []
@@ -152,17 +162,23 @@ def train_model(model, train_loader, val_loader, num_epochs=30, lr=1e-4):
             best_f1 = val_f1
             best_model_state = model.state_dict()
 
-    return best_model_state
+    train_end_time = time.time()
+    train_time = train_end_time - train_start_time
+    return best_model_state, train_time
 
 
+# Main training and evaluation loop with added metrics and parameters
 models_to_train = ['vit', 'densenet201', 'vgg19', 'efficientnet']
 k_folds = 5
 batch_size = 32
+num_epochs = 30
+lr = 1e-4
 train_transform, val_transform = get_transforms()
 
-test_results = {model_name: {'acc': [], 'f1': []} for model_name in models_to_train}
+test_results = {model_name: {'acc': [], 'f1': [], 'balanced_acc': [], 'auc': [], 'train_time': [], 'test_time': []}
+                for model_name in models_to_train}
 
-kf = KFold(n_splits=k_folds, shuffle=True, random_state=42)
+kf = KFold(n_splits=k_folds, shuffle=True, random_state=seed)
 
 for fold, (train_idx, val_idx) in enumerate(kf.split(train_val_images)):
     print(f'\nFold {fold + 1}/{k_folds}')
@@ -183,30 +199,48 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(train_val_images)):
 
     for model_name in models_to_train:
         print(f'\nTraining {model_name.upper()}...')
+        print(
+            f'Parameters: Seed={seed}, Learning Rate={lr}, Epochs={num_epochs}, Batch Size={batch_size}, Model={model_name}')
         model = initialize_model(model_name, num_classes)
-        best_model_state = train_model(model, train_loader, val_loader)
+        best_model_state, train_time = train_model(model, train_loader, val_loader, num_epochs=num_epochs, lr=lr)
 
         model.load_state_dict(best_model_state)
         model.eval()
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         model = model.to(device)
 
-        test_preds, test_labels_list = [], []
+        test_start_time = time.time()
+        test_preds, test_labels_list, test_probs = [], [], []
         with torch.no_grad():
             for inputs, labels in test_loader:
                 inputs = inputs.to(device)
                 outputs = model(inputs)
+                probs = torch.softmax(outputs, dim=1)[:, 1].cpu().numpy()
                 preds = torch.argmax(outputs, 1).cpu().numpy()
                 test_preds.extend(preds)
                 test_labels_list.extend(labels.numpy())
+                test_probs.extend(probs)
+
+        test_end_time = time.time()
+        test_time = test_end_time - test_start_time
 
         test_acc = accuracy_score(test_labels_list, test_preds)
         test_f1 = f1_score(test_labels_list, test_preds, average='macro')
+        test_balanced_acc = balanced_accuracy_score(test_labels_list, test_preds)
+        test_auc = roc_auc_score(test_labels_list, test_probs)
 
         test_results[model_name]['acc'].append(test_acc)
         test_results[model_name]['f1'].append(test_f1)
-        print(f'{model_name.upper()} - Test Acc: {test_acc:.4f}, Test F1: {test_f1:.4f}')
+        test_results[model_name]['balanced_acc'].append(test_balanced_acc)
+        test_results[model_name]['auc'].append(test_auc)
+        test_results[model_name]['train_time'].append(train_time)
+        test_results[model_name]['test_time'].append(test_time)
 
+        print(f'{model_name.upper()} - Test Acc: {test_acc:.4f}, Test F1: {test_f1:.4f}, '
+              f'Test Balanced Acc: {test_balanced_acc:.4f}, Test AUC: {test_auc:.4f}')
+        print(f'Train Time: {train_time:.2f}s, Test Time: {test_time:.2f}s')
+
+# Final summary with all metrics
 print('\nFinal Summary Across 5 Folds:')
 print('=' * 50)
 for model_name in models_to_train:
@@ -214,8 +248,20 @@ for model_name in models_to_train:
     std_test_acc = np.std(test_results[model_name]['acc'])
     avg_test_f1 = np.mean(test_results[model_name]['f1'])
     std_test_f1 = np.std(test_results[model_name]['f1'])
+    avg_test_balanced_acc = np.mean(test_results[model_name]['balanced_acc'])
+    std_test_balanced_acc = np.std(test_results[model_name]['balanced_acc'])
+    avg_test_auc = np.mean(test_results[model_name]['auc'])
+    std_test_auc = np.std(test_results[model_name]['auc'])
+    avg_train_time = np.mean(test_results[model_name]['train_time'])
+    avg_test_time = np.mean(test_results[model_name]['test_time'])
 
     print(f'{model_name.upper()}:')
+    print(
+        f'Parameters: Seed={seed}, Learning Rate={lr}, Epochs={num_epochs}, Batch Size={batch_size}, Model={model_name}')
     print(f'Average Test Accuracy: {avg_test_acc:.4f} (±{std_test_acc:.4f})')
     print(f'Average Test F1: {avg_test_f1:.4f} (±{std_test_f1:.4f})')
+    print(f'Average Test Balanced Accuracy: {avg_test_balanced_acc:.4f} (±{std_test_balanced_acc:.4f})')
+    print(f'Average Test AUC: {avg_test_auc:.4f} (±{std_test_auc:.4f})')
+    print(f'Average Train Time: {avg_train_time:.2f}s')
+    print(f'Average Test Time: {avg_test_time:.2f}s')
     print('-' * 50)
