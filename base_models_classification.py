@@ -10,6 +10,7 @@ from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
 from torchvision import models
 from sklearn.metrics import accuracy_score, f1_score, balanced_accuracy_score, roc_auc_score
+import sys
 
 # Set seeds
 seed = 42
@@ -244,6 +245,8 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(train_val_images)):
 print('\nFinal Summary Across 5 Folds:')
 print('=' * 50)
 for model_name in models_to_train:
+    sample_image, _ = train_dataset[0]  # a sample
+    image_memory_size = sys.getsizeof(sample_image.storage()) / (1024 * 1024)
     avg_test_acc = np.mean(test_results[model_name]['acc'])
     std_test_acc = np.std(test_results[model_name]['acc'])
     avg_test_f1 = np.mean(test_results[model_name]['f1'])
@@ -264,4 +267,5 @@ for model_name in models_to_train:
     print(f'Average Test AUC: {avg_test_auc:.4f} (±{std_test_auc:.4f})')
     print(f'Average Train Time: {avg_train_time:.2f}s')
     print(f'Average Test Time: {avg_test_time:.2f}s')
+    print(f'Memory size of a processed image (training/testing): {image_memory_size:.2f} MB')
     print('-' * 50)
