@@ -1,0 +1,56 @@
+
+VIT, random_state=123 
+FOLD 1 TO 5: 
+VIT - Test Acc: 0.9379, Test F1: 0.9379
+VIT - Test Acc: 0.9425, Test F1: 0.9425
+VIT - Test Acc: 0.9471, Test F1: 0.9471
+VIT - Test Acc: 0.9494, Test F1: 0.9493
+VIT - Test Acc: 0.9448, Test F1: 0.9447
+
+Average Test Accuracy: 0.9444 (±0.0040)
+Average Test F1: 0.9443 (±0.0039)
+
+##############################################
+
+VIT, random_state=42 
+FOLD 1 TO 5: 
+VIT - Test Acc: 0.9494, Test F1: 0.9493
+VIT - Test Acc: 0.9402, Test F1: 0.9401
+VIT - Test Acc: 0.9609, Test F1: 0.9608
+VIT - Test Acc: 0.9563, Test F1: 0.9562
+VIT - Test Acc: 0.9494, Test F1: 0.9492
+
+Average Test Accuracy: 0.9513 (±0.0070)
+Average Test F1: 0.9511 (±0.0070)
+
+###############################################
+
+DENSENET201, random_state=42
+FOLD 1 TO 5: 
+DENSENET201 - Test Acc: 0.9563, Test F1: 0.9562
+DENSENET201 - Test Acc: 0.9517, Test F1: 0.9516
+DENSENET201 - Test Acc: 0.9333, Test F1: 0.9332
+DENSENET201 - Test Acc: 0.9540, Test F1: 0.9539
+DENSENET201 - Test Acc: 0.9586, Test F1: 0.9585
+
+Average Test Accuracy: 0.9508 (±0.0090)
+Average Test F1: 0.9507 (±0.0091)
+
+###############################################
+
+Fold 1 | Test Acc: 0.9034, Test F1: 0.9030, Balanced Acc: 0.9023, AUC: 0.9610
+Fold 2 | Test Acc: 0.9149, Test F1: 0.9146, Balanced Acc: 0.9143, AUC: 0.9681
+Fold 3 | Test Acc: 0.9103, Test F1: 0.9099, Balanced Acc: 0.9094, AUC: 0.9766
+Fold 4 | Test Acc: 0.9103, Test F1: 0.9099, Balanced Acc: 0.9094, AUC: 0.9666
+Fold 5 | Test Acc: 0.8989, Test F1: 0.8981, Balanced Acc: 0.8969, AUC: 0.9674
+
+Average Graph Memory Usage: 0.030 MB
+Parameters: Seed=42, Learning Rate=0.0001, Epochs=300, Batch Size=32, Model=graph_vit
+Average Train Time: 95.88s (±1.81s)
+Average Test Time: 0.04s (±0.00s)
+Average Test Accuracy: 0.9076 (±0.0057)
+Average Test F1-Score: 0.9071 (±0.0058)
+Average Test Balanced Accuracy: 0.9065 (±0.0061)
+Average Test AUC: 0.9680 (±0.0050)
+
+##############################
