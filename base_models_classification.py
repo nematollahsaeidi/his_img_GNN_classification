@@ -1,16 +1,19 @@
 
-import numpy as np
+from tqdm import tqdm
 import time
-from sklearn.model_selection import train_test_split, KFold
-from sklearn.preprocessing import LabelEncoder
+import sys
+import os
+import tifffile
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from sklearn.model_selection import train_test_split, KFold
+from sklearn.preprocessing import LabelEncoder
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
 from torchvision import models
 from sklearn.metrics import accuracy_score, f1_score, balanced_accuracy_score, roc_auc_score
-import sys
 
 seed = 42
 np.random.seed(seed)
@@ -18,17 +21,51 @@ torch.manual_seed(seed)
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(seed)
 
-benign_images = np.load(
-    '/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/pannuke_two_classes/images/benign_images.npy')
-benign_labels = np.load(
-    '/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/pannuke_two_classes/labels/benign_labels.npy')
-malignant_images = np.load(
-    '/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/pannuke_two_classes/images/malignant_images.npy')
-malignant_labels = np.load(
-    '/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/pannuke_two_classes/labels/malignant_labels.npy')
+k_folds = 5
+batch_size = 32
+num_epochs = 100
+lr = 1e-4
+models_to_train = ['efficientnet']  # ['vit', 'densenet201', 'vgg19', 'efficientnet']
+dataset_type = 'BACH'  # Options: 'PanNuke', 'BACH'
 
-all_images = np.concatenate([benign_images, malignant_images], axis=0)
-all_labels = np.concatenate([benign_labels, malignant_labels], axis=0)
+if dataset_type == 'PanNuke':
+    benign_images = np.load(
+        '/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/pannuke_two_classes/images/benign_images.npy')
+    benign_labels = np.load(
+        '/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/pannuke_two_classes/labels/benign_labels.npy')
+    malignant_images = np.load(
+        '/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/pannuke_two_classes/images/malignant_images.npy')
+    malignant_labels = np.load(
+        '/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/pannuke_two_classes/labels/malignant_labels.npy')
+
+    all_images = np.concatenate([benign_images, malignant_images], axis=0)
+    all_labels = np.concatenate([benign_labels, malignant_labels], axis=0)
+elif dataset_type == 'BACH':
+    base_path = '/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/bach'
+    categories = ['benign', 'insitu', 'invasive', 'normal']
+    image_paths = []
+    labels = []
+
+    print(f"Loading {dataset_type} dataset...")
+    for category in categories:
+        folder_path = os.path.join(base_path, category)
+        for img_file in os.listdir(folder_path):
+            if img_file.endswith('.tif'):
+                image_paths.append(os.path.join(folder_path, img_file))
+                labels.append(category)
+
+    all_images = []
+    for img_path in tqdm(image_paths):
+        img = tifffile.imread(img_path)
+        if img.dtype == np.uint16:  # Convert uint16 to uint8
+            img = (img / 256).astype(np.uint8)
+        if img.ndim == 2:  # If grayscale, convert to RGB
+            img = np.stack([img] * 3, axis=-1)
+        all_images.append(img)
+    all_images = np.array(all_images)
+    all_labels = labels
+else:
+    raise ValueError("Invalid dataset_type. Choose 'PanNuke' or 'BACH'.")
 
 label_encoder = LabelEncoder()
 all_labels_encoded = label_encoder.fit_transform(all_labels)
@@ -163,11 +200,6 @@ def train_model(model, train_loader, val_loader, num_epochs=30, lr=1e-4):
     return best_model_state, train_time
 
 
-models_to_train = ['vit']#['vit', 'densenet201', 'vgg19', 'efficientnet']
-k_folds = 5
-batch_size = 32
-num_epochs = 100
-lr = 1e-4
 train_transform, val_transform = get_transforms()
 
 test_results = {model_name: {'acc': [], 'f1': [], 'balanced_acc': [], 'auc': [], 'train_time': [], 'test_time': []}
@@ -210,7 +242,7 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(train_val_images)):
             for inputs, labels in test_loader:
                 inputs = inputs.to(device)
                 outputs = model(inputs)
-                probs = torch.softmax(outputs, dim=1)[:, 1].cpu().numpy()
+                probs = torch.softmax(outputs, dim=1).cpu().numpy()  # Keep all class probabilities
                 preds = torch.argmax(outputs, 1).cpu().numpy()
                 test_preds.extend(preds)
                 test_labels_list.extend(labels.numpy())
@@ -222,7 +254,11 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(train_val_images)):
         test_acc = accuracy_score(test_labels_list, test_preds)
         test_f1 = f1_score(test_labels_list, test_preds, average='macro')
         test_balanced_acc = balanced_accuracy_score(test_labels_list, test_preds)
-        test_auc = roc_auc_score(test_labels_list, test_probs)
+
+        if num_classes == 2:
+            test_auc = roc_auc_score(test_labels_list, [p[1] for p in test_probs])  # Binary case: use positive class probs
+        else:
+            test_auc = roc_auc_score(test_labels_list, test_probs, multi_class='ovr')  # Multi-class case: use all probs
 
         test_results[model_name]['acc'].append(test_acc)
         test_results[model_name]['f1'].append(test_f1)
@@ -254,8 +290,8 @@ for model_name in models_to_train:
     std_test_time = np.std(test_results[model_name]['test_time'])
 
     print(f'{model_name.upper()}:')
-    print(
-        f'Parameters: Seed={seed}, Learning Rate={lr}, Epochs={num_epochs}, Batch Size={batch_size}, Model={model_name}')
+    print(f'Parameters: Seed={seed}, Learning Rate={lr}, Epochs={num_epochs}, Batch Size={batch_size}, Model={model_name}'
+          , Dataset={dataset_type})
     print(f'Average Test Accuracy: {avg_test_acc:.4f} (±{std_test_acc:.4f})')
     print(f'Average Test F1: {avg_test_f1:.4f} (±{std_test_f1:.4f})')
     print(f'Average Test Balanced Accuracy: {avg_test_balanced_acc:.4f} (±{std_test_balanced_acc:.4f})')
