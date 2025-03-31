@@ -12,14 +12,12 @@ from torchvision import models
 from sklearn.metrics import accuracy_score, f1_score, balanced_accuracy_score, roc_auc_score
 import sys
 
-# Set seeds
 seed = 42
 np.random.seed(seed)
 torch.manual_seed(seed)
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(seed)
 
-# Load data (unchanged)
 benign_images = np.load(
     '/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/pannuke_two_classes/images/benign_images.npy')
 benign_labels = np.load(
@@ -41,7 +39,6 @@ train_val_images, test_images, train_val_labels, test_labels = train_test_split(
 )
 
 
-# Dataset and transforms (unchanged)
 class MedicalDataset(Dataset):
     def __init__(self, images, labels, transform=None):
         self.images = images
@@ -79,7 +76,6 @@ def get_transforms():
     return train_transform, val_transform
 
 
-# Model initialization (unchanged)
 def initialize_model(model_name, num_classes):
     model = None
     if model_name == 'vgg19':
@@ -87,7 +83,7 @@ def initialize_model(model_name, num_classes):
         in_features = model.classifier[0].in_features
         model.classifier = nn.Linear(in_features, num_classes)
     elif model_name == 'efficientnet':
-        model = models.efficientnet_b0(pretrained=True)
+        model = models.efficientnet_v2_s(pretrained=True)
         in_features = model.classifier[1].in_features
         model.classifier = nn.Linear(in_features, num_classes)
     elif model_name == 'densenet201':
@@ -101,7 +97,6 @@ def initialize_model(model_name, num_classes):
     return model
 
 
-# Training function with time tracking
 def train_model(model, train_loader, val_loader, num_epochs=30, lr=1e-4):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
@@ -168,11 +163,10 @@ def train_model(model, train_loader, val_loader, num_epochs=30, lr=1e-4):
     return best_model_state, train_time
 
 
-# Main training and evaluation loop with added metrics and parameters
-models_to_train = ['vit', 'densenet201', 'vgg19', 'efficientnet']
+models_to_train = ['vit']#['vit', 'densenet201', 'vgg19', 'efficientnet']
 k_folds = 5
 batch_size = 32
-num_epochs = 30
+num_epochs = 100
 lr = 1e-4
 train_transform, val_transform = get_transforms()
 
@@ -241,7 +235,6 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(train_val_images)):
               f'Test Balanced Acc: {test_balanced_acc:.4f}, Test AUC: {test_auc:.4f}')
         print(f'Train Time: {train_time:.2f}s, Test Time: {test_time:.2f}s')
 
-# Final summary with all metrics
 print('\nFinal Summary Across 5 Folds:')
 print('=' * 50)
 for model_name in models_to_train:
@@ -257,6 +250,8 @@ for model_name in models_to_train:
     std_test_auc = np.std(test_results[model_name]['auc'])
     avg_train_time = np.mean(test_results[model_name]['train_time'])
     avg_test_time = np.mean(test_results[model_name]['test_time'])
+    std_train_time = np.std(test_results[model_name]['train_time'])
+    std_test_time = np.std(test_results[model_name]['test_time'])
 
     print(f'{model_name.upper()}:')
     print(
@@ -265,7 +260,7 @@ for model_name in models_to_train:
     print(f'Average Test F1: {avg_test_f1:.4f} (±{std_test_f1:.4f})')
     print(f'Average Test Balanced Accuracy: {avg_test_balanced_acc:.4f} (±{std_test_balanced_acc:.4f})')
     print(f'Average Test AUC: {avg_test_auc:.4f} (±{std_test_auc:.4f})')
-    print(f'Average Train Time: {avg_train_time:.2f}s')
-    print(f'Average Test Time: {avg_test_time:.2f}s')
-    print(f'Memory size of a processed image (training/testing): {image_memory_size:.2f} MB')
+    print(f'Average Train Time: {avg_train_time:.2f}s (±{std_train_time:.2f}s)')
+    print(f'Average Test Time: {avg_test_time:.2f}s (±{std_test_time:.2f}s)')
+    print(f'Memory Usage of a processed image: {image_memory_size:.3f} MB')
     print('-' * 50)
