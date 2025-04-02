@@ -1,5 +1,5 @@
 
-# Histopathology Image Classification
+# Leveraging Medical Foundation Model Features in Graph Neural Network-Based Retrieval of Breast Histopathology Images
 
 ## Description
 This repository contains a deep learning pipeline for classifying histopathology images. Two main approaches are implemented:
