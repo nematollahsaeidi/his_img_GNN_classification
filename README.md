@@ -86,3 +86,8 @@ python graph_models_classification.py
 - For UNI, provide a Hugging Face token via `login()`.
 
 --- 
+
+### Contact
+Emad (Nematollah) Saeidi
+
+Email: nemat.saeidi@gmail.com, Nematollah.Saeidi@dp-uni.ac.at
