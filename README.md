@@ -1,5 +1,5 @@
 
-# Leveraging Medical Foundation Model Features in Graph Neural Network-Based Retrieval of Breast Histopathology Images
+# Histological Image Classification Using Graph Neural Networks with Foundation Model Features
 
 ## Description
 This repository contains a deep learning pipeline for classifying histopathology images. Two main approaches are implemented:
@@ -34,27 +34,31 @@ python pannuke_binary_data_generation.py
 
 ### 1. Base Models (`base_models_classification.py`)
 The base models approach supports the following pre-trained architectures:
+- **ViT-B/16** (Vision Transformer)
 - **VGG19**
 - **EfficientNet-V2-S**
 - **DenseNet201**
 
-Each model is initialized with pre-trained weights, and the final classification layer is modified to match the number of classes in the dataset.
+Each model is initialized with pre-trained weights, and the final classification layer is modified to match the number of classes in the dataset (2 for PanNuke, 4 for BACH).
 
 ### 2. Graph-Based Models (`graph_models_classification.py`)
 The graph-based approach combines pre-trained feature extractors with GNNs:
 - **Feature Extractors**:
-  - **ViT-B/16**
-  - **UNI**
-  - **Swin Transformer**
-- **Graph Construction**: 
+  - **ViT-B/16** (Vision Transformer)
+  - **UNI** (MahmoodLab/UNI)
+  - **UNI2-h** (MahmoodLab/UNI2-h)
+  - **Swin Transformer** (swin_large_patch4_window7_224)
+  - **CONCH** (conch_ViT-B-16)
+  - **DenseNet201**
+  - **VGG19**
+  - **EfficientNet-V2-S**
+- **Graph Construction**:
   - Patch embeddings are extracted from the feature extractor.
-  - K-Means clustering groups patches into nodes, and cosine similarity determines edges.
+  - K-Means clustering (optional, with `num_clusters=10` or `None`) groups patches into nodes.
+  - Cosine similarity (threshold=0.6) determines edges between nodes.
 - **GNN Models**:
   - **GAT (Graph Attention Network)**: Uses attention mechanisms to weigh node relationships.
-
-## Training Strategy
-- **Dataset Split**: Both scripts split the data into **train/validation (80%)** and **test (20%)**, with stratification based on labels.
-- **Cross-Validation**: 5-Fold Cross-Validation is used to evaluate model performance on the train/validation set.
+  - **TransformerConv**: Employs transformer-based convolution for graph processing.
 
 ## Performance Metrics
 Both approaches report the following metrics:
@@ -64,7 +68,7 @@ Both approaches report the following metrics:
 - **AUC (Area Under ROC Curve)**: Measures discriminative ability (binary or multi-class OVR).
 - **Training Time**: Time taken to train the model.
 - **Testing Time**: Time taken to evaluate on the test set.
-- **Memory Usage**: Memory of processed images or graphs.
+- **Confusion Matrix**: Summarizes classification performance across folds.
 
 ## Running the Scripts
 
@@ -73,7 +77,7 @@ To train and evaluate the base models:
 ```sh
 python base_models_classification.py
 ```
-- Edit `models_to_train` to select models (e.g., `['vgg19', 'efficientnet']`).
+- Edit `models_to_train` to select a model (e.g., `'densenet201'`, `'vgg19'`, `'efficientnet_v2_s'`, `'vit'`).
 - Set `dataset_type` to `'PanNuke'` or `'BACH'`.
 
 ### Graph-Based Models
@@ -81,9 +85,15 @@ To train and evaluate the graph-based models:
 ```sh
 python graph_models_classification.py
 ```
-- Edit `model_types` to select feature extractors (e.g., `['swin', 'vit']`).
+- Edit `model_type` to select a feature extractor (e.g., `'uni2'`, `'vit'`, `'swin'`, `'conch'`, `'densenet201'`).
 - Set `dataset_type` to `'PanNuke'` or `'BACH'`.
-- For UNI, provide a Hugging Face token via `login()`.
+- Set `num_clusters` to `10` or `None` for graph construction.
+- For UNI or UNI2-h, provide a Hugging Face token via `login()`.
+
+## Additional Notes
+- **Pre-trained Weights**: Paths to pre-trained weights are specified in the scripts (e.g., `/mnt/miaai/STUDIES/his_img_GNN_classification/pretrain_model_weights/`).
+- **Logging**: Training and evaluation logs are saved to `/mnt/miaai/Nemat/nuclei_seg/best_models/` for graph-based models.
+- **Model Saving**: Best models (based on validation loss) are saved per fold in `best_models/{model_name}_{dataset_type}/`.
 
 --- 
 
