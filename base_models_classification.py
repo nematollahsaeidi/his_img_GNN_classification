@@ -24,7 +24,7 @@ k_folds = 5
 batch_size = 32
 num_epochs = 300
 lr = 1e-4
-models_to_train = 'efficientnet'  # Options: 'vit', 'densenet201', 'vgg19', 'efficientnet'
+models_to_train = 'densenet201'  # Options: 'vit', 'densenet201', 'vgg19', 'efficientnet_v2_s'
 dataset_type = 'BACH'  # Options: 'PanNuke', 'BACH'
 
 if dataset_type == 'PanNuke':
@@ -119,14 +119,14 @@ def initialize_model(model_name, num_classes):
         model.load_state_dict(torch.load("/mnt/miaai/STUDIES/his_img_GNN_classification/pretrain_model_weights/vgg19-dcbb9e9d.pth"))
         in_features = model.classifier[0].in_features
         model.classifier = nn.Linear(in_features, num_classes)
-    elif model_name == 'efficientnet':
+    elif model_name == 'efficientnet_v2_s':
         model = models.efficientnet_v2_s(pretrained=False)
         model.load_state_dict(torch.load("/mnt/miaai/STUDIES/his_img_GNN_classification/pretrain_model_weights/efficientnet_v2_s-dd5fe13b.pth"))
         in_features = model.classifier[1].in_features
         model.classifier = nn.Linear(in_features, num_classes)
     elif model_name == 'densenet201':
         model = models.densenet201(pretrained=False)
-        model.load_state_dict(torch.load("/mnt/miaai/STUDIES/his_img_GNN_classification/pretrain_model_weights/densenet201-c1103571.pth"))
+        model.load_state_dict(torch.load("/mnt/miaai/STUDIES/his_img_GNN_classification/pretrain_model_weights/densenet201_tv_in1k.bin"))
         in_features = model.classifier.in_features
         model.classifier = nn.Linear(in_features, num_classes)
     elif model_name == 'vit':
