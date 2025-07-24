@@ -1,10 +1,11 @@
 from tqdm import tqdm
 import time
-import sys
 import os
 import tifffile
 import numpy as np
 import torch
+import timm
+import logging
 import torch.nn as nn
 import torch.optim as optim
 from sklearn.model_selection import train_test_split, StratifiedKFold
@@ -13,6 +14,8 @@ from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
 from torchvision import models
 from sklearn.metrics import accuracy_score, f1_score, balanced_accuracy_score, roc_auc_score, confusion_matrix
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 seed = 42
 np.random.seed(seed)
@@ -24,8 +27,23 @@ k_folds = 5
 batch_size = 32
 num_epochs = 300
 lr = 1e-4
-models_to_train = 'densenet201'  # Options: 'vit', 'densenet201', 'vgg19', 'efficientnet_v2_s'
-dataset_type = 'BACH'  # Options: 'PanNuke', 'BACH'
+model_type = 'efficientnet_v2_s'  # Options: 'vit', 'densenet201', 'vgg19', 'efficientnet_v2_s', 'swin'
+dataset_type = 'BreakHis'  # Options: 'PanNuke', 'BACH' , 'BreakHis'
+breakhis_magnification = '40X'  # Options: '40X', '100X', '200X', '400X', '4M'
+path_model = f'{model_type}_{dataset_type}'
+
+log_file = f'/mnt/miaai/Nemat/nuclei_seg/best_models/{path_model}/out.log'
+# if not os.path.exists(log_file):
+#     os.makedirs(log_file)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file, mode='w'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 if dataset_type == 'PanNuke':
     benign_images = np.load(
@@ -45,7 +63,7 @@ elif dataset_type == 'BACH':
     image_paths = []
     labels = []
 
-    print(f"Loading {dataset_type} dataset...")
+    logging.info(f"Loading {dataset_type} dataset...")
     for category in categories:
         folder_path = os.path.join(base_path, category)
         for img_file in os.listdir(folder_path):
@@ -63,8 +81,20 @@ elif dataset_type == 'BACH':
         all_images.append(img)
     all_images = np.array(all_images)
     all_labels = labels
+elif dataset_type == 'BreakHis':
+    benign_images = np.load(
+        f'/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/breakhis_two_classes/{breakhis_magnification}/benign_images.npy')
+    benign_labels = np.load(
+        f'/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/breakhis_two_classes/{breakhis_magnification}/benign_labels.npy')
+    malignant_images = np.load(
+        f'/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/breakhis_two_classes/{breakhis_magnification}/malignant_images.npy')
+    malignant_labels = np.load(
+        f'/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/breakhis_two_classes/{breakhis_magnification}/malignant_labels.npy')
+
+    all_images = np.concatenate([benign_images, malignant_images], axis=0)
+    all_labels = np.concatenate([benign_labels, malignant_labels], axis=0)
 else:
-    raise ValueError("Invalid dataset_type. Choose 'PanNuke' or 'BACH'.")
+    raise ValueError("Invalid dataset_type. Choose 'PanNuke' or 'BACH' or 'BreakHis'.")
 
 label_encoder = LabelEncoder()
 all_labels_encoded = label_encoder.fit_transform(all_labels)
@@ -74,6 +104,7 @@ train_val_images, test_images, train_val_labels, test_labels = train_test_split(
     all_images, all_labels_encoded, test_size=0.2, random_state=seed, stratify=all_labels_encoded
 )
 
+del all_images, all_labels_encoded
 
 class MedicalDataset(Dataset):
     def __init__(self, images, labels, transform=None):
@@ -91,6 +122,8 @@ class MedicalDataset(Dataset):
         if self.transform:
             image = self.transform(torch.tensor(image))
         return image, label
+        # return image, torch.tensor(label, dtype=torch.long)  # Explicitly convert label to torch.long
+
 
 
 def get_transforms():
@@ -116,24 +149,39 @@ def initialize_model(model_name, num_classes):
     model = None
     if model_name == 'vgg19':
         model = models.vgg19(pretrained=False)
-        model.load_state_dict(torch.load("/mnt/miaai/STUDIES/his_img_GNN_classification/pretrain_model_weights/vgg19-dcbb9e9d.pth"))
+        model.load_state_dict(
+            torch.load("/mnt/miaai/STUDIES/his_img_GNN_classification/pretrain_model_weights/vgg19-dcbb9e9d.pth"))
         in_features = model.classifier[0].in_features
         model.classifier = nn.Linear(in_features, num_classes)
     elif model_name == 'efficientnet_v2_s':
         model = models.efficientnet_v2_s(pretrained=False)
-        model.load_state_dict(torch.load("/mnt/miaai/STUDIES/his_img_GNN_classification/pretrain_model_weights/efficientnet_v2_s-dd5fe13b.pth"))
+        model.load_state_dict(torch.load(
+            "/mnt/miaai/STUDIES/his_img_GNN_classification/pretrain_model_weights/efficientnet_v2_s-dd5fe13b.pth"))
         in_features = model.classifier[1].in_features
         model.classifier = nn.Linear(in_features, num_classes)
     elif model_name == 'densenet201':
         model = models.densenet201(pretrained=False)
-        model.load_state_dict(torch.load("/mnt/miaai/STUDIES/his_img_GNN_classification/pretrain_model_weights/densenet201_tv_in1k.bin"))
+        model.load_state_dict(
+            torch.load("/mnt/miaai/STUDIES/his_img_GNN_classification/pretrain_model_weights/densenet201_tv_in1k.bin"))
         in_features = model.classifier.in_features
         model.classifier = nn.Linear(in_features, num_classes)
     elif model_name == 'vit':
         model = models.vit_b_16(pretrained=False)
-        model.load_state_dict(torch.load("/mnt/miaai/STUDIES/his_img_GNN_classification/pretrain_model_weights/vit_b_16-c867db91.pth"))
+        model.load_state_dict(
+            torch.load("/mnt/miaai/STUDIES/his_img_GNN_classification/pretrain_model_weights/vit_b_16-c867db91.pth"))
         in_features = model.heads.head.in_features
         model.heads.head = nn.Linear(in_features, num_classes)
+    elif model_name == 'swin':
+        # model = timm.create_model('swin_large_patch4_window7_224', pretrained=False)
+        model = timm.create_model(
+            'swin_large_patch4_window7_224',
+            pretrained=True,
+            num_classes=num_classes,
+            global_pool='avg'
+        )
+        # in_features = model.head.in_features
+        # model.head = nn.Linear(in_features, num_classes)  # out_features
+        # model.head = nn.Sequential(nn.AdaptiveAvgPool2d(1), nn.Flatten(), nn.Linear(in_features, num_classes))
     return model
 
 
@@ -180,10 +228,10 @@ def train_model(model, train_loader, val_loader, num_epochs=30, lr=1e-4):
                 best_val_loss = val_loss
                 best_model_state = model.state_dict()
 
-        print(f'Epoch {epoch + 1}/{num_epochs}')
-        print(f'Train Loss: {train_loss:.4f}')
-        print(f'Val Loss: {val_loss:.4f}')
-        print('-' * 60)
+        logging.info(f'Epoch {epoch + 1}/{num_epochs}')
+        logging.info(f'Train Loss: {train_loss:.4f}')
+        logging.info(f'Val Loss: {val_loss:.4f}')
+        logging.info('-' * 60)
 
     return best_model_state
 
@@ -202,23 +250,29 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(train_val_images, train_val
     train_dataset = MedicalDataset(train_images, train_labels, train_transform)
     val_dataset = MedicalDataset(val_images, val_labels, val_transform)
     test_dataset = MedicalDataset(test_images, test_labels, val_transform)
+    len_test_dataset = len(test_dataset)
+    del train_images, train_labels, val_images, val_labels
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
+    del train_dataset
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
+    del val_dataset
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=4, pin_memory=True)
+    del test_dataset
 
-    print(f'\nFold {fold + 1}/{k_folds}')
-    print('=' * 50)
-    print(f'Parameters: Seed={seed}, Learning Rate={lr}, Epochs={num_epochs},\n Batch_Size={batch_size}, Model={models_to_train}, Dataset={dataset_type}')
-    model = initialize_model(models_to_train, num_classes)
+    logging.info(f'\nFold {fold + 1}/{k_folds}')
+    logging.info('=' * 50)
+    logging.info(
+        f'Parameters: Seed={seed}, Learning Rate={lr}, Epochs={num_epochs},\n Batch_Size={batch_size}, Model={model_type}, Dataset={dataset_type}')
+    model = initialize_model(model_type, num_classes)
     train_start_time = time.time()
     best_model_state = train_model(model, train_loader, val_loader, num_epochs=num_epochs, lr=lr)
     train_time = time.time() - train_start_time
 
-    os.makedirs(os.path.dirname(f'best_models/{models_to_train}_{dataset_type}'), exist_ok=True)
-    torch.save(best_model_state, f'best_models/{models_to_train}_{dataset_type}/fold_{fold + 1}.pth')
+    # os.makedirs(os.path.dirname(f'best_models/{model_type}_{dataset_type}'), exist_ok=True)
+    torch.save(best_model_state, f'best_models/{model_type}_{dataset_type}/fold_{fold + 1}.pth')
     model.load_state_dict(best_model_state)
-    print(f'Saved best model for fold {fold + 1} based on validation loss')
+    logging.info(f'Saved best model for fold {fold + 1} based on validation loss')
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     test_preds, test_labels_list, test_probs = [], [], []
@@ -236,7 +290,7 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(train_val_images, train_val
             test_labels_list.extend(labels.numpy())
             test_probs.extend(probs)
             iter_end = time.time()
-            print(f"Iteration: {iter_end - iter_start:.4f} seconds")
+            logging.info(f"Iteration: {iter_end - iter_start:.4f} seconds")
     test_time = time.time() - test_start_time
 
     conf_matrix = confusion_matrix(test_labels_list, test_preds)
@@ -249,8 +303,9 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(train_val_images, train_val
     else:
         test_auc = roc_auc_score(test_labels_list, test_probs, multi_class='ovr')
 
-    print(f'Test Acc: {test_acc:.4f}, Test F1: {test_f1:.4f}, Test Balanced Acc: {test_balanced_acc:.4f}, Test AUC: {test_auc:.4f}, confusion_matrix:{conf_matrix}')
-    print(f'Train Time: {train_time:.4f}s, Test Time: {test_time/len(test_dataset):.4f}s')
+    logging.info(
+        f'Test Acc: {test_acc:.4f}, Test F1: {test_f1:.4f}, Test Balanced Acc: {test_balanced_acc:.4f}, Test AUC: {test_auc:.4f}, confusion_matrix:{conf_matrix}')
+    logging.info(f'Train Time: {train_time:.4f}s, Test Time: {test_time / len_test_dataset:.4f}s')
 
     all_conf_matrices.append(conf_matrix)
     test_results['acc'].append(test_acc)
@@ -258,10 +313,10 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(train_val_images, train_val
     test_results['balanced_acc'].append(test_balanced_acc)
     test_results['auc'].append(test_auc)
     test_results['train_times'].append(train_time)
-    test_results['test_times'].append(test_time/len(test_dataset))
+    test_results['test_times'].append(test_time / len_test_dataset)
 
 num_params = sum(p.numel() for p in model.parameters())
-# sample_image, _ = train_dataset[0]  # a sample ?????#########
+# sample_image, _ = train_dataset[0]  # a sample
 # image_memory_size = sys.getsizeof(sample_image.storage()) / (1024 * 1024)
 
 avg_test_acc = np.mean(test_results['acc'])
@@ -278,14 +333,15 @@ std_train_time = np.std(test_results['train_times'])
 std_test_time = np.std(test_results['test_times'])
 sum_conf_matrix = np.sum(all_conf_matrices, axis=0)
 
-print('\nFinal Summary Across 5 Folds:')
-print('=' * 50)
-print(f'Parameters: Seed={seed}, Learning Rate={lr}, Epochs={num_epochs},\n Batch Size={batch_size}, Model={models_to_train}, Number_Params={num_params}, Dataset={dataset_type}')
-print(f'Confusion_Matrix: {sum_conf_matrix}')
-print(f'Average Test Accuracy: {avg_test_acc:.4f} (±{std_test_acc:.4f})')
-print(f'Average Test F1: {avg_test_f1:.4f} (±{std_test_f1:.4f})')
-print(f'Average Test Balanced Accuracy: {avg_test_balanced_acc:.4f} (±{std_test_balanced_acc:.4f})')
-print(f'Average Test AUC: {avg_test_auc:.4f} (±{std_test_auc:.4f})')
-print(f'Average Train Time: {avg_train_time:.4f}s (±{std_train_time:.4f}s)')
-print(f'Average Test Time: {avg_test_time:.4f}s (±{std_test_time:.4f}s)')
-# print(f'Memory Usage of a processed image: {image_memory_size:.3f} MB')
+logging.info('\nFinal Summary Across 5 Folds:')
+logging.info('=' * 50)
+logging.info(
+    f'Parameters: Seed={seed}, Learning Rate={lr}, Epochs={num_epochs},\n Batch Size={batch_size}, Model={model_type}, Number_Params={num_params}, Dataset={dataset_type}')
+logging.info(f'Confusion_Matrix: {sum_conf_matrix}')
+logging.info(f'Average Test Accuracy: {avg_test_acc:.4f} (±{std_test_acc:.4f})')
+logging.info(f'Average Test F1: {avg_test_f1:.4f} (±{std_test_f1:.4f})')
+logging.info(f'Average Test Balanced Accuracy: {avg_test_balanced_acc:.4f} (±{std_test_balanced_acc:.4f})')
+logging.info(f'Average Test AUC: {avg_test_auc:.4f} (±{std_test_auc:.4f})')
+logging.info(f'Average Train Time: {avg_train_time:.4f}s (±{std_train_time:.4f}s)')
+logging.info(f'Average Test Time: {avg_test_time:.4f}s (±{std_test_time:.4f}s)')
+# logging.info(f'Memory Usage of a processed image: {image_memory_size:.3f} MB')
