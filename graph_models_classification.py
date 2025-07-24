@@ -19,6 +19,12 @@ from sklearn.model_selection import train_test_split, StratifiedKFold
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score, f1_score, balanced_accuracy_score, roc_auc_score, confusion_matrix
 
+os.environ["TRANSFORMERS_CACHE"] = "/mnt/miaai/STUDIES/his_img_GNN_classification/huggingface_cache/transformers"
+os.environ["HF_HOME"] = "/mnt/miaai/STUDIES/his_img_GNN_classification/huggingface_cache/huggingface"
+os.environ["HF_DATASETS_CACHE"] = "/mnt/miaai/STUDIES/his_img_GNN_classification/huggingface_cache/datasets"
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 seed = 42
 random.seed(seed)
 np.random.seed(seed)
@@ -27,11 +33,13 @@ if torch.cuda.is_available():
     torch.cuda.manual_seed(seed)
 
 lr = 1e-4
+n_fold = 5
 num_epochs = 300
 batch_size = 32
-num_clusters = 10  # Options: 10 or None
-model_type = 'uni2'  # Options: 'vit', 'uni', 'swin', 'uni2', 'conch', 'densenet201', 'vgg19', 'efficientnet_v2_s'
-dataset_type = 'BACH'  # Options: 'PanNuke', 'BACH'
+num_clusters = 100  # Options: 10 or None
+model_type = 'swin'  # Options: 'vit', 'uni', 'swin', 'uni2', 'conch', 'densenet201', 'vgg19', 'efficientnet_v2_s'
+dataset_type = 'PanNuke'  # Options: 'PanNuke', 'BACH', 'BreakHis'
+breakhis_magnification = '40X'  # Options: '40X', '100X', '200X', '400X', '4M'
 model_name = f'graph_{model_type}'
 path_model = f'graph_{model_type}_{dataset_type}'
 
@@ -84,6 +92,18 @@ elif dataset_type == 'BACH':
         all_images.append(img)
     all_images = np.array(all_images)
     all_labels = labels
+elif dataset_type == 'BreakHis':
+    benign_images = np.load(
+        f'/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/breakhis_two_classes/{breakhis_magnification}/benign_images.npy')
+    benign_labels = np.load(
+        f'/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/breakhis_two_classes/{breakhis_magnification}/benign_labels.npy')
+    malignant_images = np.load(
+        f'/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/breakhis_two_classes/{breakhis_magnification}/malignant_images.npy')
+    malignant_labels = np.load(
+        f'/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/breakhis_two_classes/{breakhis_magnification}/malignant_labels.npy')
+
+    all_images = np.concatenate([benign_images, malignant_images], axis=0)
+    all_labels = np.concatenate([benign_labels, malignant_labels], axis=0)
 else:
     raise ValueError("Invalid dataset_type. Choose 'PanNuke' or 'BACH'.")
 
@@ -94,6 +114,7 @@ num_classes = len(np.unique(all_labels_encoded))
 train_val_images, test_images, train_val_labels, test_labels = train_test_split(
     all_images, all_labels_encoded, test_size=0.2, random_state=seed, stratify=all_labels_encoded)
 
+del all_images, all_labels_encoded
 
 def get_memory_size_mb(data):
     if isinstance(data, np.ndarray):
@@ -186,7 +207,7 @@ def build_graph(patch_features, num_clusters=None, similarity_threshold=0.6):
         kmeans = KMeans(n_clusters=num_clusters, random_state=42)
         kmeans.fit(patch_features)
         cluster_centers = kmeans.cluster_centers_
-        sim_matrix = cosine_similarity(cluster_centers)
+        sim_matrix = cosine_similarity(cluster_centers)   # with Faiss
         edges = []
         for i in range(num_clusters):
             for j in range(i + 1, num_clusters):
@@ -312,8 +333,7 @@ def train_gnn(model, train_loader, val_loader, num_epochs=300, lr=1e-4):
     return best_model_state
 
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-kf = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
+kf = StratifiedKFold(n_splits=n_fold, shuffle=True, random_state=seed)
 
 if model_type == 'vit':
     feature_model = models.vit_b_16(pretrained=False)
@@ -346,7 +366,7 @@ elif model_type == 'swin':
 elif model_type == 'uni2':
     login('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')  # Replace with your HF token
     os.makedirs("uni2-h/", exist_ok=True)
-    # hf_hub_download("MahmoodLab/UNI2-h", filename="pytorch_model.bin", local_dir=local_dir, force_download=True)
+    # hf_hub_download("MahmoodLab/UNI2-h", filename="pytorch_model.bin", local_dir="uni2-h/", force_download=True)
     timm_kwargs = {
         'model_name': 'vit_giant_patch14_224',
         'img_size': 224,
@@ -426,7 +446,9 @@ for fold, (train_idx, val_idx) in enumerate(kf.split(train_val_images, train_val
         feature_model, val_test_transform, model_type=model_type)
 
     train_loader = GraphDataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    del train_dataset
     val_loader = GraphDataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    del val_dataset
     test_loader = GraphDataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
     model = GNN_GAT(in_dim=in_dim, out_dim=num_classes)
@@ -498,7 +520,7 @@ sum_conf_matrix = np.sum(all_conf_matrices, axis=0)
 
 logging.info('\nFinal Summary Across 5 Folds:')
 logging.info('=' * 50)
-logging.info(f'Parameters: Seed={seed}, Learning_Rate={lr}, Epochs={num_epochs}, Batch_Size={batch_size},\n Model={model_name}, Number_Params={num_params}, Dataset={dataset_type}, num_clusters={num_clusters}')
+logging.info(f'Parameters: Seed={seed}, Learning_Rate={lr}, Epochs={num_epochs}, Batch_Size={batch_size},\n Model={model_name}, Number_Params={num_params}, Dataset={dataset_type}, num_clusters={num_clusters}, if dataset is BreakHis, magnification is ={breakhis_magnification}')
 logging.info(f'Confusion_Matrix: {sum_conf_matrix}')
 logging.info(f'Average Test Accuracy: {avg_test_acc:.4f} (±{std_test_acc:.4f})')
 logging.info(f'Average Test F1-Score: {avg_test_f1:.4f} (±{std_test_f1:.4f})')
