@@ -19,16 +19,26 @@ The project supports two histopathology datasets:
   - **Benign Labels**: `benign_labels.npy`
   - **Malignant Images**: `malignant_images.npy`
   - **Malignant Labels**: `malignant_labels.npy`
+- **Dataset Generation**:
+To generate the PanNuke dataset, run:
+```sh
+python pannuke_binary_data_generation.py
+```
 
 ### 2. BACH Dataset
 - **Description**: The Breast Cancer Histology (BACH) dataset, containing four categories: `benign`, `insitu`, `invasive`, and `normal`.
 - **Files**: Images are stored as `.tif` files in category-specific folders under `/mnt/miaai/STUDIES/his_img_GNN_classification/datasets/bach`.
 
-## Dataset Generation
-To generate the PanNuke dataset, run:
-```sh
-python pannuke_binary_data_generation.py
-```
+
+### 3. BreakHis Dataset
+- **Description**: The Breast Histological Images for Classification (BreakHis) dataset, a binary classification dataset categorized into benign and malignant. Images are available at multiple magnification levels: 40X, 100X, 200X, 400X, and 4M(combination of 4 magnifications).
+- **Files**: 
+  - **Benign Images**: `benign_images.npy`
+  - **Benign Labels**: `benign_labels.npy`
+  - **Malignant Images**: `malignant_images.npy`
+  - **Malignant Labels**: `malignant_labels.npy`
+  - **Path**: Files are stored under /mnt/miaai/STUDIES/his_img_GNN_classification/datasets/breakhis_two_classes/{magnification}/, where {magnification} is one of 40X, 100X, 200X, 400X, or 4M.
+ 
 
 ## Model Architectures
 
@@ -39,7 +49,7 @@ The base models approach supports the following pre-trained architectures:
 - **EfficientNet-V2-S**
 - **DenseNet201**
 
-Each model is initialized with pre-trained weights, and the final classification layer is modified to match the number of classes in the dataset (2 for PanNuke, 4 for BACH).
+Each model is initialized with pre-trained weights, and the final classification layer is modified to match the number of classes in the dataset (2 for PanNuke, 4 for BACH, 2 for BreakHis).
 
 ### 2. Graph-Based Models (`graph_models_classification.py`)
 The graph-based approach combines pre-trained feature extractors with GNNs:
@@ -78,7 +88,7 @@ To train and evaluate the base models:
 python base_models_classification.py
 ```
 - Edit `models_to_train` to select a model (e.g., `'densenet201'`, `'vgg19'`, `'efficientnet_v2_s'`, `'vit'`).
-- Set `dataset_type` to `'PanNuke'` or `'BACH'`.
+- Set `dataset_type` to `'PanNuke'` or `'BACH'` or `'BreakHis'`.
 
 ### Graph-Based Models
 To train and evaluate the graph-based models:
@@ -86,7 +96,7 @@ To train and evaluate the graph-based models:
 python graph_models_classification.py
 ```
 - Edit `model_type` to select a feature extractor (e.g., `'uni2'`, `'vit'`, `'swin'`, `'conch'`, `'densenet201'`).
-- Set `dataset_type` to `'PanNuke'` or `'BACH'`.
+- Set `dataset_type` to `'PanNuke'` or `'BACH'` or `'BreakHis'`.
 - Set `num_clusters` to `10` or `None` for graph construction.
 - For UNI or UNI2-h, provide a Hugging Face token via `login()`.
 
