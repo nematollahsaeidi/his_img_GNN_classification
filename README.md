@@ -1,5 +1,5 @@
 
-# Histological Image Classification Using Graph Neural Networks with Foundation Model Features
+# Integrating Pathology Foundation Model Features into Graph Neural Network and Fusing Predictions with Standard Fine-Tuned Models for Enhanced Histology Image Classification
 
 ## Description
 This repository contains a deep learning pipeline for classifying histopathology images. Two main approaches are implemented:
