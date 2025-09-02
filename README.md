@@ -57,7 +57,7 @@ The graph-based approach combines pre-trained feature extractors with GNNs:
   - **ViT-B/16** (Vision Transformer)
   - **UNI** (MahmoodLab/UNI)
   - **UNI2-h** (MahmoodLab/UNI2-h)
-  - **Swin Transformer** (swin_large_patch4_window7_224)
+  <!--- **Swin Transformer** (swin_large_patch4_window7_224)-->
   - **CONCH** (conch_ViT-B-16)
   - **DenseNet201**
   - **VGG19**
@@ -72,13 +72,13 @@ The graph-based approach combines pre-trained feature extractors with GNNs:
 
 ## Performance Metrics
 Both approaches report the following metrics:
-- **Accuracy**: Overall classification accuracy.
+<!--- **Accuracy**: Overall classification accuracy.-->
 - **F1-Score (Macro Average)**: Balances precision and recall across classes.
 - **Balanced Accuracy**: Accounts for class imbalance.
-- **AUC (Area Under ROC Curve)**: Measures discriminative ability (binary or multi-class OVR).
+<!--- **AUC (Area Under ROC Curve)**: Measures discriminative ability (binary or multi-class OVR).-->
 - **Training Time**: Time taken to train the model.
 - **Testing Time**: Time taken to evaluate on the test set.
-- **Confusion Matrix**: Summarizes classification performance across folds.
+<!--- **Confusion Matrix**: Summarizes classification performance across folds.-->
 
 ## Running the Scripts
 
